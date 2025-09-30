@@ -1,0 +1,2 @@
+
+#define DEFAULT_DEVIATION    10

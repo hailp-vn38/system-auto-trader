@@ -1,0 +1,29 @@
+# Loại trừ tất cả mọi thứ
+*
+# Loại bỏ file .DS_Store ở mọi cấp thư mục
+.DS_Store
+**/.DS_Store
+._.DS_Store
+**/._.DS_Store
+
+# Không loại trừ các thư mục
+!*/
+# Không loại trừ file .gitignore
+!.gitignore
+# Không loại trừ file README.md
+!README.md
+
+# Thêm các thư mục con cụ thể mà bạn muốn theo dõi
+# Ví dụ: Giữ lại thư mục mt5-ea và tất cả nội dung trong đó
+!Experts/**
+Experts/Advisors
+Experts/Examples
+Experts/Free Robots
+
+!Include/AutoTrader/**
+!Indicators/**
+Indicators/Examples
+Indicators/Free Indicators
+
+# Nếu muốn giữ lại một thư mục con cụ thể trong một thư mục bị loại trừ
+# Ví dụ: !/mql5/Include/MQL5Book/ws/** 
