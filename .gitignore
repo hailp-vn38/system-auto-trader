@@ -25,5 +25,10 @@ Experts/Free Robots
 Indicators/Examples
 Indicators/Free Indicators
 
+# Re-ignore compiled binaries and macOS metadata even in whitelisted folders
+**/*.ex5
+Experts/**/*.ex5
+**/.DS_Store
+
 # Nếu muốn giữ lại một thư mục con cụ thể trong một thư mục bị loại trừ
 # Ví dụ: !/mql5/Include/MQL5Book/ws/** 
