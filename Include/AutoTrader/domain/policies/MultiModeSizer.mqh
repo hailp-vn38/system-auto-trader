@@ -3,17 +3,9 @@
 //| Adapts your MultiModeLotSizer logic to the ISizer interface       |
 //+------------------------------------------------------------------+
 
-// Dependencies: ISizer interface from your system core
-//   class ISizer { public: virtual double Lots(string sym, int stopPoints, double suggested, long magic) = 0; };
+#include <AutoTrader/domain/enums/Enum.mqh>
+#include <AutoTrader/domain/ports/ISizer.mqh>
 
-
-
-// --- Original modes mapped 1:1 ---
-enum ENUM_LOT_CALC_MODE {
-  CALC_MODE_FIXED = 0,        // Lot cố định (value = lot)
-  CALC_MODE_FIXED_MONEY = 1,  // Lot theo số tiền rủi ro cố định (value = tiền)
-  CALC_MODE_RISK_PERCENT = 2  // Lot theo % rủi ro trên Balance (value = %)
-};
 
 //+------------------------------------------------------------------+
 //| Helpers                                                          |

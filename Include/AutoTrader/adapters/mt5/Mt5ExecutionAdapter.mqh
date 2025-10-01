@@ -1,6 +1,8 @@
 // Include/AutoTrader/adapters/mt5/Mt5ExecutionAdapter.mqh
 
+#include <AutoTrader/domain/enums/Enum.mqh>
 #include <AutoTrader/domain/ports/IExecution.mqh>
+#include <AutoTrader/utils/Convert.mqh>
 #include <Trade/Trade.mqh>
 
 class Mt5ExecutionAdapter : public IExecution {
@@ -15,30 +17,62 @@ private:
   }
 
 public:
-  Mt5ExecutionAdapter(const ulong defaultDeviationPoints = 20)
-      : m_defaultDeviation(defaultDeviationPoints) {}
-
-  bool PlaceMarket(const string sym, const ENUM_ORDER_TYPE type, double volume, double sl,
-                   double tp, ulong &ticket_out, int deviation_points, long magic) override {
-    Prep(magic, deviation_points);
-    bool ok    = (type == ORDER_TYPE_BUY) ? m_trade.Buy(volume, sym, 0.0, sl, tp)
-                                          : (type == ORDER_TYPE_SELL ? m_trade.Sell(volume, sym, 0.0,
-                                                                                    sl, tp)
-                                                                     : false);
-    ticket_out = ok ? m_trade.ResultDeal() : 0;
-    return ok;
+  Mt5ExecutionAdapter(const ulong magic, const ulong defaultDeviationPoints = 20)
+      : m_defaultDeviation(defaultDeviationPoints) {
+    m_trade.SetExpertMagicNumber(magic);
+    m_trade.SetDeviationInPoints(m_defaultDeviation);
   }
 
-  bool ModifySLTPBySymbolMagic(const string sym, long magic, double sl, double tp) override {
-    const int n = PositionsTotal();
-    for(int i = 0; i < n; i++) {
-      if(PositionGetSymbol(i) == sym && PositionGetInteger(POSITION_MAGIC) == magic) {
-        ulong pticket = (ulong)PositionGetInteger(POSITION_TICKET);
-        Prep(magic, (int)m_defaultDeviation);
-        return m_trade.PositionModify(pticket, sl, tp);
-      }
+  bool OpenTrade(const string sym, long magic, const ENUM_TRADE_TYPE type, double volume,
+                 double price, double sl, double tp, int deviation_points, ulong &ticket_out,
+                 const string comment = "", ENUM_ORDER_TYPE_TIME type_time = ORDER_TIME_GTC,
+                 datetime expiration = 0) override {
+    ENUM_ORDER_TYPE ot;
+    ENUM_TRADE_REQUEST_ACTIONS action;
+
+    if(!TradeTypeToOrderType(type, ot, action)) return false;
+
+    MqlTradeRequest req   = {};     // Khởi tạo struct
+    req.action            = action; // Sử dụng action từ hàm helper
+    req.symbol            = sym;
+    req.volume            = volume;
+    req.type              = ot;
+    req.price             = price;
+    req.sl                = sl;
+    req.tp                = tp;
+    req.deviation         = (deviation_points > 0) ? (ulong)deviation_points : m_defaultDeviation;
+    req.magic             = (ulong)magic;
+    req.type_filling      = ORDER_FILLING_FOK;
+    req.type_time         = type_time;
+    req.expiration        = expiration;
+    req.comment           = comment;
+    req.stoplimit         = 0.0;
+
+    MqlTradeResult result = {0}; // Khởi tạo struct
+
+    if(!m_trade.OrderSend(req, result)) return false;
+
+    // Kiểm tra kết quả
+    if(result.retcode != TRADE_RETCODE_DONE && result.retcode != TRADE_RETCODE_PLACED) {
+      return false;
     }
-    return false;
+
+    // Lấy ticket từ kết quả phù hợp
+    if(action == TRADE_ACTION_DEAL) {
+      ticket_out = result.deal;
+    } else {
+      ticket_out = result.order;
+    }
+
+    return true;
+  }
+
+  int ClosePositionsByTickets(const ulong &tickets[]) override {
+    int closed = 0;
+    for(int i = 0; i < ArraySize(tickets); i++) {
+      if(m_trade.PositionClose(tickets[i])) closed++;
+    }
+    return closed;
   }
 
   int CloseAllBySymbolMagic(const string sym, long magic) override {
@@ -46,30 +80,14 @@ public:
     for(int i = PositionsTotal() - 1; i >= 0; i--) {
       if(PositionGetSymbol(i) == sym && PositionGetInteger(POSITION_MAGIC) == magic) {
         ulong pticket = (ulong)PositionGetInteger(POSITION_TICKET);
-        Prep(magic, (int)m_defaultDeviation);
         if(m_trade.PositionClose(pticket)) closed++;
       }
     }
     return closed;
   }
 
-  // ---- Pending Stop/Limit ----
-  bool PlaceStop(const string sym, bool isSell, double volume, double price, double sl, double tp,
-                 long magic, ulong &ticket_out) override {
-    Prep(magic, -1);
-    bool ok    = isSell ? m_trade.SellStop(volume, price, sym, sl, tp)
-                        : m_trade.BuyStop(volume, price, sym, sl, tp);
-    ticket_out = ok ? m_trade.ResultOrder() : 0;
-    return ok;
-  }
-
-  bool PlaceLimit(const string sym, bool isSell, double volume, double price, double sl, double tp,
-                  long magic, ulong &ticket_out) override {
-    Prep(magic, -1);
-    bool ok    = isSell ? m_trade.SellLimit(volume, price, sym, sl, tp)
-                        : m_trade.BuyLimit(volume, price, sym, sl, tp);
-    ticket_out = ok ? m_trade.ResultOrder() : 0;
-    return ok;
+  bool ModifyPositionByTicket(const ulong ticket, const double sl, const double tp) override {
+    return m_trade.PositionModify(ticket, sl, tp);
   }
 
   bool ModifyPending(ulong order_ticket, double price, double sl, double tp) override {
@@ -83,7 +101,7 @@ public:
   }
   bool DeletePending(ulong order_ticket) override { return m_trade.OrderDelete(order_ticket); }
 
-  int DeleteAllPendingsBySymbolMagic(const string sym, long magic) override {
+  int DeleteAllPendings(const string sym, long magic) override {
     int deleted = 0;
     for(int i = OrdersTotal() - 1; i >= 0; i--) {
       ulong ot = OrderGetTicket(i);

@@ -11,7 +11,7 @@ public:
   Exit_MAFlip(IMarketData *market, int fastMA, int slowMA)
       : md(market), fast(fastMA), slow(slowMA) {}
 
-  virtual bool ShouldExit(string sym, ENUM_TIMEFRAMES tf, long magic) {
+  virtual bool ShouldExit(const string sym,const ENUM_TIMEFRAMES tf, long magic) {
     ulong ticket;
     if(!PositionsEx::SelectFirstBySymbolMagic(sym, magic, ticket)) return false;
     long type = PositionGetInteger(POSITION_TYPE);

@@ -1,2 +1,6 @@
 
-class ISizer { public: virtual double Lots(string sym, int stopPoints, double suggested, long magic) = 0; };
+class ISizer {
+public:
+  virtual double Lots(const string sym, const int stopPoints, const double suggested,
+                      const long magic) = 0;
+};

@@ -1,12 +1,23 @@
 // Include/AutoTrader/domain/ports/IExitSignal.mqh
-class IExitSignal {
-public:
-  // Đóng vị thế đang mở
-  virtual bool ShouldExit(const string sym, ENUM_TIMEFRAMES tf, long magic) = 0;
 
-  // MỚI: Đóng/cancel pending orders hiện hữu
-  // return true => hủy toàn bộ; hoặc bạn có thể mở rộng để trả về danh sách chọn lọc
-  virtual bool ShouldCancelOrders(const string sym, ENUM_TIMEFRAMES tf, long magic) {
+#include <AutoTrader/domain/ports/IPositions.mqh>
+
+class IExitSignal {
+protected:
+  IPositions *m_positions; // gắn từ bên ngoài
+public:
+  void SetPositions(IPositions *p) { m_positions = p; }
+  IExitSignal() : m_positions(NULL) {}
+
+  // Đóng vị thế đang mở theo symbol+magic nếu thoả điều kiện
+  virtual bool
+  ShouldExit(const string sym, const ENUM_TIMEFRAMES tf, const long magic, ulong &tickets[])
+                                          = 0;
+
+  // Tuỳ chọn: có nên huỷ toàn bộ lệnh chờ hiện có?
+  virtual bool ShouldCancelOrders(const string sym, const ENUM_TIMEFRAMES tf, const long magic) {
     return false;
   }
+
+  virtual ~IExitSignal() {}
 };

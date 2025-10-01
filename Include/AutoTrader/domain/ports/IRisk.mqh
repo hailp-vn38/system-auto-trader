@@ -1,2 +1,2 @@
 
-class IRisk { public: virtual bool AllowTrade(string sym, long magic) = 0; };
+class IRisk { public: virtual bool AllowTrade(const string sym,const long magic) = 0; };
