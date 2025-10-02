@@ -10,13 +10,13 @@
 #include <AutoTrader/adapters/storage/SQLiteStorage.mqh>
 #include <AutoTrader/adapters/telemetry/PrintLogger.mqh>
 #include <AutoTrader/app/Orchestrator.mqh>
-#include <AutoTrader/domain/policies/MultiModeSizer.mqh>
 #include <AutoTrader/domain/policies/Risk_AllowOneOpen.mqh>
 #include <AutoTrader/domain/ports/ITargets.mqh>
 #include <AutoTrader/exits/RangeBreakoutExits.mqh>
 #include <AutoTrader/handler/RangeBreakoutHandler.mqh>
+#include <AutoTrader/sizers/Sizer_MultiMode.mqh>
 #include <AutoTrader/strategies/RangeBreakout.mqh>
-#include <AutoTrader/targets/MultisTargetMode.mqh>
+#include <AutoTrader/targets/Target_MultiMode.mqh>
 #include <AutoTrader/trailing/Trailing_BreakEven.mqh>
 #include <AutoTrader/trailing/Trailing_Distance.mqh>
 #include <AutoTrader/utils/BarTimer.mqh>
@@ -27,11 +27,11 @@ Mt5PositionsAdapter *g_pos;
 Mt5OrdersAdapter *g_orders;
 
 Risk_AllowOneOpen *g_risk;
-MultiModeSizer *g_sizer;
+Sizer_MultiMode *g_sizer;
 
 RangeBreakout *g_sig;
 
-MultisTargetMode *g_targets;
+ITargets *g_targets;
 RangeBreakoutExits *g_exit;
 PrintLogger *g_log;
 
@@ -41,7 +41,10 @@ RangeBreakoutHandler *handler;
 Orchestrator *g_app;
 BarTimer *g_barTimer;
 
-static ENUM_TSL_CALC_MODE MapTrailingCalcMode(const ENUM_TARGET_CALC_MODE mode) {
+//+------------------------------------------------------------------+
+//| Map ENUM_TARGET_CALC_MODE to ENUM_TSL_CALC_MODE                  |
+//+------------------------------------------------------------------+
+ENUM_TSL_CALC_MODE MapTrailingCalcMode(const ENUM_TARGET_CALC_MODE mode) {
     switch(mode) {
     case CALC_MODE_POINTS: return TSL_CALC_POINTS;
     case CALC_MODE_PERCENT: return TSL_CALC_PERCENT;
@@ -50,15 +53,70 @@ static ENUM_TSL_CALC_MODE MapTrailingCalcMode(const ENUM_TARGET_CALC_MODE mode) 
     }
 }
 
+//+------------------------------------------------------------------+
+//| Khởi tạo Trailing Break Even                                     |
+//+------------------------------------------------------------------+
+ITrailing *createTrailingBreakEven() {
+    return new Trailing_BreakEven(g_md, g_exec, g_pos, InpBeStopTrigger, InpBeStopBufferValue,
+                                  InpBECalcMode);
+}
+
+//+------------------------------------------------------------------+
+//| Khởi tạo Trailing Distance                                       |
+//+------------------------------------------------------------------+
+ITrailing *createTrailingDistance() {
+    // Chuyển đổi mode từ config sang TSL mode
+    ENUM_TSL_CALC_MODE tslMode = MapTrailingCalcMode(InpTslCalcMode);
+
+    // Validate mode: Distance trailing yêu cầu mode cụ thể (không cho phép OFF)
+    if(tslMode == TSL_CALC_OFF) {
+        if(g_log) {
+            g_log.Warn("[RangeBreakout] Trailing distance yêu cầu mode Points/Percent/Factor - "
+                       "mặc định chuyển sang Percent.");
+        }
+        tslMode = TSL_CALC_PERCENT;
+    }
+
+    // Tạo instance với đầy đủ dependencies
+    return new Trailing_Distance(g_md, g_exec, g_pos, InpTslTrigger, InpTslDistance,
+                                 InpTslStepValue, tslMode, g_log);
+}
+
+//+------------------------------------------------------------------+
+//| Khởi tạo Trailing Stop strategy theo config                      |
+//| @return ITrailing* - trailing instance hoặc NULL nếu disabled    |
+//+------------------------------------------------------------------+
+ITrailing *initializeTrailing() {
+    switch(InpTrailingMode) {
+    case TRAILING_STOP_BREAK_EVEN: {
+        if(g_log) g_log.Info("[RangeBreakout] Initializing Trailing Break Even...");
+        return createTrailingBreakEven();
+    }
+
+    case TRAILING_STOP_DISTANCE: {
+        if(g_log) g_log.Info("[RangeBreakout] Initializing Trailing Distance...");
+        return createTrailingDistance();
+    }
+
+    default: {
+        if(g_log) g_log.Info("[RangeBreakout] Trailing stop disabled (TRAILING_STOP_OFF).");
+        return NULL;
+    }
+    }
+}
+
 int OnInit() {
+    // Khởi tạo Logger trước để dùng cho các component khác
+    g_log = new PrintLogger();
+
     // Khởi tạo Adapter
     g_md     = new Mt5MarketDataAdapter();
     g_exec   = new Mt5ExecutionAdapter(InpMagic, 0);
     g_pos    = new Mt5PositionsAdapter();
     g_orders = new Mt5OrdersAdapter();
 
-    // set size cố định 0.2
-    g_sizer = new MultiModeSizer(InpLotValue, InpLotMode);
+    // Khởi tạo sizer theo mode đã chọn
+    g_sizer = new Sizer_MultiMode(InpLotValue, InpLotMode);
 
     // Cho phép trade
     g_risk = new Risk_AllowOneOpen(g_pos, 1);
@@ -77,38 +135,14 @@ int OnInit() {
 
     // Khởi tạo tính stoplost/takeprofit
     g_targets
-        = new MultisTargetMode(g_md, InpTargetValue, InpTargetMode, InpStopValue, InpStopLossMode);
+        = new Target_MultiMode(g_md, InpTargetValue, InpTargetMode, InpStopValue, InpStopLossMode);
 
-    // Khởi tạo Trailing
-    g_trail = NULL;
-    switch(InpTrailingMode) {
-    case TRAILING_STOP_BREAK_EVEN: {
-        g_trail = new Trailing_BreakEven(g_md, g_exec, g_pos, InpBeStopTrigger, InpBeStopBufferValue,
-                                         InpBECalcMode);
-        break;
-    }
-    case TRAILING_STOP_DISTANCE: {
-        ENUM_TSL_CALC_MODE tslMode = MapTrailingCalcMode(InpTslCalcMode);
-        if(tslMode == TSL_CALC_OFF) {
-            Print("[RangeBreakout] Trailing distance yêu cầu mode Points/Percent/Factor - mặc định chuyển sang Percent.");
-            tslMode = TSL_CALC_PERCENT;
-        }
-        g_trail = new Trailing_Distance(g_md, g_exec, g_pos, InpTslTrigger, InpTslDistance,
-                                        InpTslStepValue, tslMode);
-        break;
-    }
-    default: {
-        Print("[RangeBreakout] Trailing stop disabled (TRAILING_STOP_OFF).");
-        break;
-    }
-    }
+    // Khởi tạo Trailing Stop strategy
+    g_trail = initializeTrailing();
 
     // Khởi tạo handler sự kiện (tuỳ chọn)
     handler = new RangeBreakoutHandler(g_exec, g_orders, g_pos, _Symbol, InpMagic,
                                        InpClosePositionsOnNewSignal);
-
-    // Common print
-    g_log = new PrintLogger();
 
     if(_Period != InpTimeframe) {
         Print("[RangeBreakout] Warning: Chart timeframe ", EnumToString(_Period),
@@ -166,6 +200,11 @@ void OnDeinit(const int reason) {
     if(g_trail != NULL) {
         delete g_trail;
         g_trail = NULL;
+    }
+
+    if(g_targets != NULL) {
+        delete g_targets;
+        g_targets = NULL;
     }
 
     if(g_exit != NULL) {
