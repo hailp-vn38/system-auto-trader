@@ -4,14 +4,20 @@
 #include <AutoTrader/domain/ports/IMarketData.mqh>
 #include <AutoTrader/utils/Positions.mqh>
 
-class ExitPositionByTime : public IExitSignal {
+class RangeBreakoutExits : public IExitSignal {
     // Thời gian đóng vị thế trong ngày
     const string closePositionTime;
     ENUM_CLOSE_TIME_MODE timeMode;
+    const bool deletePendingOrders;
+    const string pendingOrderExpiryTime;
 
   public:
-    ExitPositionByTime(ENUM_CLOSE_TIME_MODE mode, const string closeTime)
-        : timeMode(mode), closePositionTime(closeTime) {}
+    RangeBreakoutExits(IOrders *orders, ENUM_CLOSE_TIME_MODE mode, const string closeTime,
+                       const string pendingTime, bool deletePending)
+        : timeMode(mode), closePositionTime(closeTime), pendingOrderExpiryTime(pendingTime),
+          deletePendingOrders(deletePending) {
+        SetOrders(orders);
+    }
 
     virtual bool
     ShouldExit(const string sym, const ENUM_TIMEFRAMES tf, const long magic, ulong &tickets[]) {
@@ -39,6 +45,17 @@ class ExitPositionByTime : public IExitSignal {
     }
 
     bool ShouldCancelOrders(const string sym, const ENUM_TIMEFRAMES tf, const long magic) override {
+        if(m_orders == NULL || !deletePendingOrders || pendingOrderExpiryTime == "") return false;
+        // Kiểm tra có lệnh nào không
+        OrderInfo ord;
+        if(!m_orders.FirstBySymbolMagic(sym, magic, ord)) return false;
+        // Kiểm tra thời gian
+        datetime timeClose   = StringToTime(pendingOrderExpiryTime);
+        datetime currentTime = TimeCurrent();
+        if(currentTime >= timeClose) {
+            // Hủy lệnh chờ
+            return true;
+        }
         return false;
     }
 };

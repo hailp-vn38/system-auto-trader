@@ -1,4 +1,5 @@
 #include <AutoTrader/domain/enums/Enum.mqh>
+#include <AutoTrader/trailing/Trailing_BreakEven.mqh>
 
 input group "<----COMMON SETTINGS----->";
 input ulong InpMagic               = 45456; /* Magic Number */  // Magic Number
@@ -27,8 +28,8 @@ input string InpDailyPositionCloseTime          = "18:00";        // Thời gian
 input group "<----ORDER SETTINGS----->";
 input bool InpDeleteRemainingOrderOnFill = false;   // Xóa lệnh Order còn lại khi khớp
 input double InpOrderBufferPoints        = 10.0;    // Điểm buffer cho lệnh
-input bool InpEnableDailyOrderDeletion   = true;    // Xóa lệnh Order nếu chưa được khớp
-input string InpDailyOrderDeletionTime   = "18:00"; // Thời gian xóa lệnh Order [HH:MM]
+input bool InpDeletePendingOrders        = true;    // Xóa lệnh Order nếu chưa được khớp
+input string InpPendingOrderExpiryTime   = "18:00"; // Thời gian xóa lệnh Order [HH:MM]
 
 //                                      // PERCENT)
 // input double InpMaxRangePercent = 0; // Giá trị tối đa của Range Filter (khi dùng PERCENT)
@@ -45,7 +46,7 @@ input double InpLotValue            = 0.01;            // Giá trị Calc Lot
 
 input group "<----TRAILING STOP SETTINGS----->";
 input ENUM_TRAILING_STOP_MODE InpTrailingMode = TRAILING_STOP_OFF; // Chế độ trailing stop
-input ENUM_TARGET_CALC_MODE InpBECalcMode     = CALC_MODE_PERCENT; // Phương pháp tính BE Stop
+input ENUM_TSL_CALC_MODE InpBECalcMode        = TSL_CALC_PERCENT;  // Phương pháp tính BE Stop
 input double InpBeStopTrigger                 = 0.5;  // Giá trị BE-Trigger : Points, Percent
 input double InpBeStopBufferValue             = 0.05; // Giá trị BE-Buffer : Points, Percent
 
