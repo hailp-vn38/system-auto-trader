@@ -2,6 +2,7 @@
 #include "App_Config.mqh"
 #include "App_Constants.mqh"
 
+// Adapter
 #include <AutoTrader/adapters/mt5/Mt5ExecutionAdapter.mqh>
 #include <AutoTrader/adapters/mt5/Mt5MarketDataAdapter.mqh>
 #include <AutoTrader/adapters/mt5/Mt5OrdersAdapter.mqh>
@@ -10,23 +11,35 @@
 #include <AutoTrader/adapters/storage/SQLiteStorage.mqh>
 #include <AutoTrader/adapters/telemetry/PrintLogger.mqh>
 #include <AutoTrader/app/Orchestrator.mqh>
-#include <AutoTrader/domain/policies/Risk_AllowOneOpen.mqh>
 #include <AutoTrader/domain/ports/ITargets.mqh>
+// Exit signal
 #include <AutoTrader/exits/RangeBreakoutExits.mqh>
+// Handler sự kiện
+#include <AutoTrader/handler/CompositeEventHandler.mqh>
 #include <AutoTrader/handler/RangeBreakoutHandler.mqh>
+#include <AutoTrader/handler/TelegramEventHandler.mqh>
+#include <AutoTrader/handler/TradingPanelEventHandler.mqh>
+
+// Sizer
 #include <AutoTrader/sizers/Sizer_MultiMode.mqh>
+// Signal
 #include <AutoTrader/strategies/RangeBreakout.mqh>
+// Target
 #include <AutoTrader/targets/Target_MultiMode.mqh>
+// Trailing
 #include <AutoTrader/trailing/Trailing_BreakEven.mqh>
 #include <AutoTrader/trailing/Trailing_Distance.mqh>
+
 #include <AutoTrader/utils/BarTimer.mqh>
+
+#include <AutoTrader/risks/RiskRangeBreakout.mqh>
 
 Mt5MarketDataAdapter *g_md;
 Mt5ExecutionAdapter *g_exec;
 Mt5PositionsAdapter *g_pos;
 Mt5OrdersAdapter *g_orders;
 
-Risk_AllowOneOpen *g_risk;
+RiskRangeBreakout *g_risk;
 Sizer_MultiMode *g_sizer;
 
 RangeBreakout *g_sig;
@@ -37,22 +50,14 @@ PrintLogger *g_log;
 
 ITrailing *g_trail;
 
-RangeBreakoutHandler *handler;
 Orchestrator *g_app;
 BarTimer *g_barTimer;
 
-//+------------------------------------------------------------------+
-//| Map ENUM_TARGET_CALC_MODE to ENUM_TSL_CALC_MODE                  |
-//+------------------------------------------------------------------+
-ENUM_TSL_CALC_MODE MapTrailingCalcMode(const ENUM_TARGET_CALC_MODE mode) {
-    switch(mode) {
-    case CALC_MODE_POINTS: return TSL_CALC_POINTS;
-    case CALC_MODE_PERCENT: return TSL_CALC_PERCENT;
-    case CALC_MODE_FACTOR: return TSL_CALC_RR;
-    default: return TSL_CALC_OFF;
-    }
-}
-
+// Event handler
+CompositeEventHandler *chandler;
+RangeBreakoutHandler *rbHandler;
+TelegramEventHandler *tgHandler;
+TradingPanelEventHandler *tpHandler;
 //+------------------------------------------------------------------+
 //| Khởi tạo Trailing Break Even                                     |
 //+------------------------------------------------------------------+
@@ -65,21 +70,8 @@ ITrailing *createTrailingBreakEven() {
 //| Khởi tạo Trailing Distance                                       |
 //+------------------------------------------------------------------+
 ITrailing *createTrailingDistance() {
-    // Chuyển đổi mode từ config sang TSL mode
-    ENUM_TSL_CALC_MODE tslMode = MapTrailingCalcMode(InpTslCalcMode);
-
-    // Validate mode: Distance trailing yêu cầu mode cụ thể (không cho phép OFF)
-    if(tslMode == TSL_CALC_OFF) {
-        if(g_log) {
-            g_log.Warn("[RangeBreakout] Trailing distance yêu cầu mode Points/Percent/Factor - "
-                       "mặc định chuyển sang Percent.");
-        }
-        tslMode = TSL_CALC_PERCENT;
-    }
-
-    // Tạo instance với đầy đủ dependencies
     return new Trailing_Distance(g_md, g_exec, g_pos, InpTslTrigger, InpTslDistance,
-                                 InpTslStepValue, tslMode, g_log);
+                                 InpTslStepValue, InpTslCalcMode, g_log);
 }
 
 //+------------------------------------------------------------------+
@@ -119,7 +111,7 @@ int OnInit() {
     g_sizer = new Sizer_MultiMode(InpLotValue, InpLotMode);
 
     // Cho phép trade
-    g_risk = new Risk_AllowOneOpen(g_pos, 1);
+    g_risk = new RiskRangeBreakout(g_pos, g_exec, InpCloseOnNewSignal);
 
     // Khởi tạo chiến lược open/close
     g_sig = new RangeBreakout(g_md, InpTimeStartHour, InpTimeStartMin, InpTimeEndHour,
@@ -141,8 +133,21 @@ int OnInit() {
     g_trail = initializeTrailing();
 
     // Khởi tạo handler sự kiện (tuỳ chọn)
-    handler = new RangeBreakoutHandler(g_exec, g_orders, g_pos, _Symbol, InpMagic,
-                                       InpClosePositionsOnNewSignal);
+    chandler = new CompositeEventHandler();
+
+    if(InpDeleteRemainingOrderOnFill) {
+        rbHandler = new RangeBreakoutHandler(g_exec, g_orders, g_pos, _Symbol, InpMagic,
+                                             InpDeleteRemainingOrderOnFill);
+        chandler.AddHandler(rbHandler);
+    }
+
+    tgHandler
+        = new TelegramEventHandler("8378289365:AAHbEMVhhLqXfE6MtEh1Mhazzm9Ydeg7Cyw", "1649959903");
+    chandler.AddHandler(tgHandler);
+
+    tpHandler
+        = new TradingPanelEventHandler(_Symbol, InpTimeframe, InpMagic, g_pos, g_orders, g_md);
+    chandler.AddHandler(tpHandler);
 
     if(_Period != InpTimeframe) {
         Print("[RangeBreakout] Warning: Chart timeframe ", EnumToString(_Period),
@@ -160,7 +165,7 @@ int OnInit() {
     if(g_risk != NULL) { g_app.SetRisk(g_risk); }
     g_app.SetExitSignal(g_exit);
     if(g_trail != NULL) { g_app.SetTrailing(g_trail); }
-    g_app.SetEventHandler(handler);
+    g_app.SetEventHandler(chandler);
 
     if(g_log) g_log.Info("EA Init OK");
     Comment("EMA(21/50) demo running..."); // quick HUD
@@ -187,9 +192,21 @@ void OnDeinit(const int reason) {
         g_app = NULL;
     }
 
-    if(handler != NULL) {
-        delete handler;
-        handler = NULL;
+    if(chandler != NULL) {
+        delete chandler;
+        chandler = NULL;
+    }
+    if(rbHandler != NULL) {
+        delete rbHandler;
+        rbHandler = NULL;
+    }
+    if(tgHandler != NULL) {
+        delete tgHandler;
+        tgHandler = NULL;
+    }
+    if(tpHandler != NULL) {
+        delete tpHandler;
+        tpHandler = NULL;
     }
 
     if(g_log != NULL) {

@@ -18,7 +18,7 @@ input double InpMaxRangePoints  = 0; // Giá trị tối đa của Range Filter 
 input double InpMinRangePercent = 0; // Giá trị tối thiểu của Range Filter (khi dùng
 
 input group "<----POSITIONS SETTINGS----->";
-input bool InpClosePositionsOnNewSignal         = false;          // Đóng vị thế khi có tín hiệu mới
+input bool InpCloseOnNewSignal         = false;          // Đóng vị thế khi có tín hiệu mới
 input ENUM_CLOSE_TIME_MODE InpClosePositionType = CLOSE_TIME_OFF; // Kiểu đóng Position
 input string InpDailyPositionCloseTime          = "18:00";        // Thời gian đóng vị thế [HH:MM]
 // input int InpMaxBuyPositions                        = 1; // Số lượng vị thế mua tối đa trong ngày
@@ -50,7 +50,7 @@ input ENUM_TSL_CALC_MODE InpBECalcMode        = TSL_CALC_PERCENT;  // Phương p
 input double InpBeStopTrigger                 = 0.5;  // Giá trị BE-Trigger : Points, Percent
 input double InpBeStopBufferValue             = 0.05; // Giá trị BE-Buffer : Points, Percent
 
-input ENUM_TARGET_CALC_MODE InpTslCalcMode    = CALC_MODE_PERCENT; // Phương pháp tính TSL Stop
+input ENUM_TSL_CALC_MODE InpTslCalcMode    = TSL_CALC_PERCENT; // Phương pháp tính TSL Stop
 input double InpTslTrigger   = 0.7;  // Giá trị Distance Trigger : Points, Percent, RR
 input double InpTslDistance  = 0.1;  // Giá trị Distance SL : Points, Percent, RR
 input double InpTslStepValue = 0.05; // Giá trị Distance Step : Points, Percent, RR

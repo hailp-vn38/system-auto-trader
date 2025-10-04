@@ -19,6 +19,7 @@
 Experts/Advisors
 Experts/Examples
 Experts/Free Robots
+!Docs/**
 
 !Include/AutoTrader/**
 !Indicators/**
